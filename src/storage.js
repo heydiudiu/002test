@@ -7,7 +7,6 @@ const dataDir = path.join(__dirname, '..', 'data');
 const dataFile = path.join(dataDir, config.dataFileName);
 
 const defaultStore = {
-  users: [],
   tasks: [],
   ideas: [],
   profits: [],
@@ -123,21 +122,6 @@ function clone(value) {
 
 function findIndexById(collection, id) {
   return collection.findIndex((item) => item.id === id);
-}
-
-// User operations
-function getUserByUsername(username) {
-  return store.users.find((user) => user.username === username);
-}
-
-function getUserById(userId) {
-  return store.users.find((user) => user.id === userId);
-}
-
-async function addUser(user) {
-  store.users.push(user);
-  await persist();
-  return user;
 }
 
 // Task operations
@@ -282,9 +266,6 @@ function getSnapshot() {
 
 module.exports = {
   init,
-  getUserByUsername,
-  getUserById,
-  addUser,
   listTasks,
   addTask,
   updateTask,

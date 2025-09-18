@@ -1,5 +1,4 @@
 const state = {
-  user: null,
   dashboard: null,
   tasks: [],
   profits: [],
@@ -9,13 +8,7 @@ const state = {
 };
 
 const selectors = {
-  authSection: document.getElementById('authSection'),
-  loginForm: document.getElementById('loginForm'),
-  loginError: document.getElementById('loginError'),
   app: document.getElementById('app'),
-  sessionInfo: document.getElementById('sessionInfo'),
-  currentUser: document.getElementById('currentUser'),
-  logoutButton: document.getElementById('logoutButton'),
   dashboardDate: document.getElementById('dashboardDate'),
   statTasksToday: document.getElementById('statTasksToday'),
   statTasksTomorrow: document.getElementById('statTasksTomorrow'),
@@ -64,7 +57,6 @@ async function fetchJSON(url, options = {}) {
   const { body, headers, ...rest } = options;
   const fetchOptions = {
     method: options.method || 'GET',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(headers || {})
@@ -94,32 +86,12 @@ async function fetchJSON(url, options = {}) {
   return data || {};
 }
 
-function toggleAuthenticatedUI(authenticated) {
-  if (authenticated) {
-    selectors.authSection.classList.add('hidden');
-    selectors.app.classList.remove('hidden');
-    selectors.sessionInfo.classList.remove('hidden');
-  } else {
-    selectors.authSection.classList.remove('hidden');
-    selectors.app.classList.add('hidden');
-    selectors.sessionInfo.classList.add('hidden');
-  }
-}
-
 async function bootstrap() {
+  selectors.app.classList.remove('hidden');
   try {
-    const session = await fetchJSON('/auth/session');
-    if (session.authenticated) {
-      state.user = session.user;
-      selectors.currentUser.textContent = `你好，${state.user.username}`;
-      toggleAuthenticatedUI(true);
-      await loadAllData();
-    } else {
-      toggleAuthenticatedUI(false);
-    }
+    await loadAllData();
   } catch (error) {
-    console.warn('无法检测登录状态', error);
-    toggleAuthenticatedUI(false);
+    console.warn('初始化数据失败', error);
   }
 }
 
@@ -672,32 +644,6 @@ selectors.reviewForm.addEventListener('submit', async (event) => {
   } catch (error) {
     showError(selectors.reviewError, error.message);
   }
-});
-
-selectors.loginForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const formData = new FormData(event.target);
-  const payload = Object.fromEntries(formData.entries());
-  try {
-    const data = await fetchJSON('/auth/login', { method: 'POST', body: payload });
-    state.user = data.user;
-    selectors.currentUser.textContent = `你好，${state.user.username}`;
-    showError(selectors.loginError, '');
-    toggleAuthenticatedUI(true);
-    await loadAllData();
-  } catch (error) {
-    showError(selectors.loginError, error.message);
-  }
-});
-
-selectors.logoutButton.addEventListener('click', async () => {
-  try {
-    await fetchJSON('/auth/logout', { method: 'POST' });
-  } catch (error) {
-    console.warn('退出登录时出现问题', error);
-  }
-  state.user = null;
-  toggleAuthenticatedUI(false);
 });
 
 bootstrap();

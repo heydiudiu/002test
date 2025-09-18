@@ -11,35 +11,11 @@
       <header class="app-header">
         <div>
           <h1>Web3 套利者日常规划</h1>
-          <p>聚焦当日行动、策略灵感和收益复盘，保护隐私的个人指挥中心。</p>
-        </div>
-        <div class="session-info hidden" id="sessionInfo">
-          <span id="currentUser"></span>
-          <button type="button" id="logoutButton" class="ghost">退出</button>
+          <p>聚焦当日行动、策略灵感和收益复盘，数据仅保存在本地设备。</p>
         </div>
       </header>
 
-      <section id="authSection" class="card">
-        <h2>登录</h2>
-        <p class="muted">
-          首次使用请调用 <code>/auth/setup</code> 接口初始化账户。所有数据保存在本地，记得配置
-          <code>APP_SECRET</code> 以加密存储。
-        </p>
-        <form id="loginForm" class="form-grid">
-          <label>
-            用户名
-            <input type="text" name="username" autocomplete="username" required />
-          </label>
-          <label>
-            密码
-            <input type="password" name="password" autocomplete="current-password" required />
-          </label>
-          <button type="submit" class="primary">登录</button>
-          <p class="error" id="loginError"></p>
-        </form>
-      </section>
-
-      <main id="app" class="hidden">
+      <main id="app">
         <section class="grid responsive">
           <article class="card" id="dashboardCard">
             <div class="card-header">

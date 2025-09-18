@@ -5,13 +5,9 @@ const { URL } = require('url');
 const crypto = require('crypto');
 const storage = require('./storage');
 const config = require('./config');
-const { hashPassword, verifyPassword, validatePasswordStrength } = require('./auth');
-const { createSession, getSession, destroySession } = require('./session');
 const {
   sendJson,
   sendText,
-  parseCookies,
-  serializeCookie,
   parseJsonBody,
   applySecurityHeaders
 } = require('./httpUtils');
@@ -27,147 +23,6 @@ function normalizeDate(input) {
     return null;
   }
   return date.toISOString().slice(0, 10);
-}
-
-function ensureAuthenticated(req, res) {
-  const cookies = parseCookies(req);
-  const token = cookies.session;
-  const session = getSession(token);
-  if (!session) {
-    sendJson(res, 401, { error: '需要登录才能访问。' });
-    return null;
-  }
-  const user = storage.getUserById(session.userId);
-  if (!user) {
-    destroySession(token);
-    sendJson(res, 401, { error: '会话无效，请重新登录。' });
-    return null;
-  }
-  return { user, token, session };
-}
-
-async function handleAuthSetup(req, res) {
-  const snapshot = storage.getSnapshot();
-  if (snapshot.users.length > 0) {
-    sendJson(res, 403, { error: '账号已经初始化完成，如需重置请清空数据文件。' });
-    return;
-  }
-
-  if (config.setupToken) {
-    const setupHeader = req.headers['x-setup-token'];
-    if (!setupHeader || setupHeader !== config.setupToken) {
-      sendJson(res, 403, { error: '缺少有效的初始化令牌。' });
-      return;
-    }
-  }
-
-  let body;
-  try {
-    body = await parseJsonBody(req);
-  } catch (error) {
-    sendJson(res, 400, { error: error.message });
-    return;
-  }
-
-  const username = body?.username?.trim();
-  const password = body?.password ?? '';
-
-  if (!username) {
-    sendJson(res, 400, { error: '用户名不能为空。' });
-    return;
-  }
-
-  const strength = validatePasswordStrength(password);
-  if (!strength.valid) {
-    sendJson(res, 400, { error: strength.message });
-    return;
-  }
-
-  const passwordRecord = hashPassword(password);
-  const user = {
-    id: crypto.randomUUID(),
-    username,
-    password: passwordRecord,
-    createdAt: new Date().toISOString()
-  };
-  await storage.addUser(user);
-  sendJson(res, 201, { message: '初始化成功，请使用刚设置的账号登录。' });
-}
-
-async function handleAuthLogin(req, res) {
-  let body;
-  try {
-    body = await parseJsonBody(req);
-  } catch (error) {
-    sendJson(res, 400, { error: error.message });
-    return;
-  }
-
-  const username = body?.username?.trim();
-  const password = body?.password ?? '';
-
-  if (!username || !password) {
-    sendJson(res, 400, { error: '用户名和密码都不能为空。' });
-    return;
-  }
-
-  const user = storage.getUserByUsername(username);
-  if (!user || !verifyPassword(password, user.password)) {
-    sendJson(res, 401, { error: '用户名或密码错误。' });
-    return;
-  }
-
-  const session = createSession(user.id);
-  const cookie = serializeCookie('session', session.id, {
-    maxAge: config.sessionLifetimeMs / 1000,
-    httpOnly: true,
-    sameSite: 'Strict',
-    secure: config.secureCookies
-  });
-  sendJson(
-    res,
-    200,
-    {
-      message: '登录成功。',
-      user: { id: user.id, username: user.username }
-    },
-    { 'Set-Cookie': cookie }
-  );
-}
-
-function handleAuthLogout(req, res) {
-  const cookies = parseCookies(req);
-  const token = cookies.session;
-  if (token) {
-    destroySession(token);
-  }
-  const expiredCookie = serializeCookie('session', '', {
-    httpOnly: true,
-    sameSite: 'Strict',
-    secure: config.secureCookies,
-    expires: new Date(0)
-  });
-  sendJson(res, 200, { message: '已退出登录。' }, { 'Set-Cookie': expiredCookie });
-}
-
-function handleAuthSession(req, res) {
-  const cookies = parseCookies(req);
-  const token = cookies.session;
-  const session = getSession(token);
-  if (!session) {
-    sendJson(res, 200, { authenticated: false });
-    return;
-  }
-  const user = storage.getUserById(session.userId);
-  if (!user) {
-    destroySession(token);
-    sendJson(res, 200, { authenticated: false });
-    return;
-  }
-  sendJson(res, 200, {
-    authenticated: true,
-    user: { id: user.id, username: user.username }
-  });
 }
 
 function categorizeTasks(tasks, today) {
@@ -260,17 +115,13 @@ function getTopPriorityTasks(tasks) {
     .slice(0, 3);
 }
 
-function filterByOwner(items, userId) {
-  return items.filter((item) => item.ownerId === userId);
-}
-
-async function handleDashboard(req, res, user) {
+async function handleDashboard(req, res) {
   const snapshot = storage.getSnapshot();
   const today = new Date().toISOString().slice(0, 10);
-  const tasks = filterByOwner(snapshot.tasks, user.id);
-  const profits = filterByOwner(snapshot.profits, user.id);
-  const ideas = filterByOwner(snapshot.ideas, user.id);
-  const inbox = filterByOwner(snapshot.inbox, user.id);
+  const tasks = snapshot.tasks || [];
+  const profits = snapshot.profits || [];
+  const ideas = snapshot.ideas || [];
+  const inbox = snapshot.inbox || [];
 
   const taskBuckets = categorizeTasks(tasks, today);
   const profitStats = calculateProfitMetrics(profits, today);
@@ -298,8 +149,8 @@ async function handleDashboard(req, res, user) {
   });
 }
 
-async function handleGetTasks(req, res, user, url) {
-  const tasks = filterByOwner(storage.listTasks(), user.id);
+async function handleGetTasks(req, res, url) {
+  const tasks = storage.listTasks();
   const statusFilter = url.searchParams.get('status');
   const dateFilter = url.searchParams.get('date');
   const from = url.searchParams.get('from');
@@ -332,7 +183,7 @@ async function handleGetTasks(req, res, user, url) {
   sendJson(res, 200, { tasks: result });
 }
 
-async function handleCreateTask(req, res, user) {
+async function handleCreateTask(req, res) {
   let body;
   try {
     body = await parseJsonBody(req);
@@ -350,7 +201,6 @@ async function handleCreateTask(req, res, user) {
   const dueDate = normalizeDate(body?.dueDate);
   const task = {
     id: crypto.randomUUID(),
-    ownerId: user.id,
     title,
     description: body?.description?.trim() || '',
     dueDate,
@@ -375,8 +225,8 @@ async function handleCreateTask(req, res, user) {
   sendJson(res, 201, { task });
 }
 
-async function handleUpdateTask(req, res, user, taskId) {
-  const tasks = filterByOwner(storage.listTasks(), user.id);
+async function handleUpdateTask(req, res, taskId) {
+  const tasks = storage.listTasks();
   if (!tasks.find((task) => task.id === taskId)) {
     sendJson(res, 404, { error: '任务不存在。' });
     return;
@@ -437,8 +287,8 @@ async function handleUpdateTask(req, res, user, taskId) {
   sendJson(res, 200, { task: updated });
 }
 
-async function handleDeleteTask(req, res, user, taskId) {
-  const tasks = filterByOwner(storage.listTasks(), user.id);
+async function handleDeleteTask(req, res, taskId) {
+  const tasks = storage.listTasks();
   if (!tasks.find((task) => task.id === taskId)) {
     sendJson(res, 404, { error: '任务不存在。' });
     return;
@@ -447,14 +297,16 @@ async function handleDeleteTask(req, res, user, taskId) {
   sendText(res, 204, '');
 }
 
-async function handleGetIdeas(req, res, user) {
-  const ideas = filterByOwner(storage.listIdeas(), user.id).sort(
-    (a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '')
-  );
+async function handleGetIdeas(req, res) {
+  const ideas = storage
+    .listIdeas()
+    .sort(
+      (a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '')
+    );
   sendJson(res, 200, { ideas });
 }
 
-async function handleCreateIdea(req, res, user) {
+async function handleCreateIdea(req, res) {
   let body;
   try {
     body = await parseJsonBody(req);
@@ -471,7 +323,6 @@ async function handleCreateIdea(req, res, user) {
 
   const idea = {
     id: crypto.randomUUID(),
-    ownerId: user.id,
     title,
     detail: body?.detail?.trim() || '',
     tags: Array.isArray(body?.tags)
@@ -493,8 +344,8 @@ async function handleCreateIdea(req, res, user) {
   sendJson(res, 201, { idea });
 }
 
-async function handleUpdateIdea(req, res, user, ideaId) {
-  const ideas = filterByOwner(storage.listIdeas(), user.id);
+async function handleUpdateIdea(req, res, ideaId) {
+  const ideas = storage.listIdeas();
   if (!ideas.find((idea) => idea.id === ideaId)) {
     sendJson(res, 404, { error: '想法不存在。' });
     return;
@@ -537,8 +388,8 @@ async function handleUpdateIdea(req, res, user, ideaId) {
   sendJson(res, 200, { idea: updated });
 }
 
-async function handleDeleteIdea(req, res, user, ideaId) {
-  const ideas = filterByOwner(storage.listIdeas(), user.id);
+async function handleDeleteIdea(req, res, ideaId) {
+  const ideas = storage.listIdeas();
   if (!ideas.find((idea) => idea.id === ideaId)) {
     sendJson(res, 404, { error: '想法不存在。' });
     return;
@@ -547,8 +398,8 @@ async function handleDeleteIdea(req, res, user, ideaId) {
   sendText(res, 204, '');
 }
 
-async function handleGetProfits(req, res, user, url) {
-  let profits = filterByOwner(storage.listProfits(), user.id);
+async function handleGetProfits(req, res, url) {
+  let profits = storage.listProfits();
   const start = url.searchParams.get('start');
   const end = url.searchParams.get('end');
   const chain = url.searchParams.get('chain');
@@ -567,7 +418,7 @@ async function handleGetProfits(req, res, user, url) {
   sendJson(res, 200, { profits });
 }
 
-async function handleCreateProfit(req, res, user) {
+async function handleCreateProfit(req, res) {
   let body;
   try {
     body = await parseJsonBody(req);
@@ -585,7 +436,6 @@ async function handleCreateProfit(req, res, user) {
 
   const entry = {
     id: crypto.randomUUID(),
-    ownerId: user.id,
     date,
     amount,
     currency: body?.currency?.trim() || 'USDT',
@@ -602,8 +452,8 @@ async function handleCreateProfit(req, res, user) {
   sendJson(res, 201, { profit: entry });
 }
 
-async function handleUpdateProfit(req, res, user, profitId) {
-  const profits = filterByOwner(storage.listProfits(), user.id);
+async function handleUpdateProfit(req, res, profitId) {
+  const profits = storage.listProfits();
   if (!profits.find((entry) => entry.id === profitId)) {
     sendJson(res, 404, { error: '收益记录不存在。' });
     return;
@@ -657,8 +507,8 @@ async function handleUpdateProfit(req, res, user, profitId) {
   sendJson(res, 200, { profit: updated });
 }
 
-async function handleDeleteProfit(req, res, user, profitId) {
-  const profits = filterByOwner(storage.listProfits(), user.id);
+async function handleDeleteProfit(req, res, profitId) {
+  const profits = storage.listProfits();
   if (!profits.find((entry) => entry.id === profitId)) {
     sendJson(res, 404, { error: '收益记录不存在。' });
     return;
@@ -667,14 +517,16 @@ async function handleDeleteProfit(req, res, user, profitId) {
   sendText(res, 204, '');
 }
 
-async function handleGetInbox(req, res, user) {
-  const inbox = filterByOwner(storage.listInbox(), user.id).sort((a, b) =>
-    (b.createdAt || '').localeCompare(a.createdAt || '')
-  );
+async function handleGetInbox(req, res) {
+  const inbox = storage
+    .listInbox()
+    .sort((a, b) =>
+      (b.createdAt || '').localeCompare(a.createdAt || '')
+    );
   sendJson(res, 200, { inbox });
 }
 
-async function handleCreateInbox(req, res, user) {
+async function handleCreateInbox(req, res) {
   let body;
   try {
     body = await parseJsonBody(req);
@@ -689,7 +541,6 @@ async function handleCreateInbox(req, res, user) {
   }
   const entry = {
     id: crypto.randomUUID(),
-    ownerId: user.id,
     content,
     type: body?.type?.trim() || 'note',
     createdAt: new Date().toISOString()
@@ -698,8 +549,8 @@ async function handleCreateInbox(req, res, user) {
   sendJson(res, 201, { entry });
 }
 
-async function handleDeleteInbox(req, res, user, inboxId) {
-  const inbox = filterByOwner(storage.listInbox(), user.id);
+async function handleDeleteInbox(req, res, inboxId) {
+  const inbox = storage.listInbox();
   if (!inbox.find((entry) => entry.id === inboxId)) {
     sendJson(res, 404, { error: '记录不存在。' });
     return;
@@ -708,15 +559,16 @@ async function handleDeleteInbox(req, res, user, inboxId) {
   sendText(res, 204, '');
 }
 
-async function handleGetReviews(req, res, user, url) {
+async function handleGetReviews(req, res, url) {
   const date = url.searchParams.get('date');
-  const reviews = filterByOwner(storage.listReviews(), user.id)
+  const reviews = storage
+    .listReviews()
     .filter((review) => (!date ? true : review.date === date))
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   sendJson(res, 200, { reviews });
 }
 
-async function handleUpsertReview(req, res, user) {
+async function handleUpsertReview(req, res) {
   let body;
   try {
     body = await parseJsonBody(req);
@@ -727,7 +579,6 @@ async function handleUpsertReview(req, res, user) {
 
   const date = normalizeDate(body?.date) || new Date().toISOString().slice(0, 10);
   const review = {
-    ownerId: user.id,
     date,
     highlight: body?.highlight?.trim() || '',
     lessons: body?.lessons?.trim() || '',
@@ -786,172 +637,52 @@ function serveStaticFile(req, res, url) {
 }
 
 const routes = [
-  { method: 'POST', pattern: /^\/auth\/setup$/, handler: handleAuthSetup },
-  { method: 'POST', pattern: /^\/auth\/login$/, handler: handleAuthLogin },
-  { method: 'POST', pattern: /^\/auth\/logout$/, handler: handleAuthLogout },
-  { method: 'GET', pattern: /^\/auth\/session$/, handler: handleAuthSession },
-  {
-    method: 'GET',
-    pattern: /^\/api\/dashboard$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleDashboard(req, res, auth.user);
-    }
-  },
-  {
-    method: 'GET',
-    pattern: /^\/api\/tasks$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleGetTasks(req, res, auth.user, ctx.url);
-    }
-  },
-  {
-    method: 'POST',
-    pattern: /^\/api\/tasks$/,
-    handler: async (req, res) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleCreateTask(req, res, auth.user);
-    }
-  },
+  { method: 'GET', pattern: /^\/api\/dashboard$/, handler: (req, res) => handleDashboard(req, res) },
+  { method: 'GET', pattern: /^\/api\/tasks$/, handler: (req, res, ctx) => handleGetTasks(req, res, ctx.url) },
+  { method: 'POST', pattern: /^\/api\/tasks$/, handler: (req, res) => handleCreateTask(req, res) },
   {
     method: 'PATCH',
     pattern: /^\/api\/tasks\/([^/]+)$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleUpdateTask(req, res, auth.user, ctx.params[0]);
-    }
+    handler: (req, res, ctx) => handleUpdateTask(req, res, ctx.params[0])
   },
   {
     method: 'DELETE',
     pattern: /^\/api\/tasks\/([^/]+)$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleDeleteTask(req, res, auth.user, ctx.params[0]);
-    }
+    handler: (req, res, ctx) => handleDeleteTask(req, res, ctx.params[0])
   },
-  {
-    method: 'GET',
-    pattern: /^\/api\/ideas$/,
-    handler: async (req, res) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleGetIdeas(req, res, auth.user);
-    }
-  },
-  {
-    method: 'POST',
-    pattern: /^\/api\/ideas$/,
-    handler: async (req, res) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleCreateIdea(req, res, auth.user);
-    }
-  },
+  { method: 'GET', pattern: /^\/api\/ideas$/, handler: (req, res) => handleGetIdeas(req, res) },
+  { method: 'POST', pattern: /^\/api\/ideas$/, handler: (req, res) => handleCreateIdea(req, res) },
   {
     method: 'PATCH',
     pattern: /^\/api\/ideas\/([^/]+)$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleUpdateIdea(req, res, auth.user, ctx.params[0]);
-    }
+    handler: (req, res, ctx) => handleUpdateIdea(req, res, ctx.params[0])
   },
   {
     method: 'DELETE',
     pattern: /^\/api\/ideas\/([^/]+)$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleDeleteIdea(req, res, auth.user, ctx.params[0]);
-    }
+    handler: (req, res, ctx) => handleDeleteIdea(req, res, ctx.params[0])
   },
-  {
-    method: 'GET',
-    pattern: /^\/api\/profits$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleGetProfits(req, res, auth.user, ctx.url);
-    }
-  },
-  {
-    method: 'POST',
-    pattern: /^\/api\/profits$/,
-    handler: async (req, res) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleCreateProfit(req, res, auth.user);
-    }
-  },
+  { method: 'GET', pattern: /^\/api\/profits$/, handler: (req, res, ctx) => handleGetProfits(req, res, ctx.url) },
+  { method: 'POST', pattern: /^\/api\/profits$/, handler: (req, res) => handleCreateProfit(req, res) },
   {
     method: 'PATCH',
     pattern: /^\/api\/profits\/([^/]+)$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleUpdateProfit(req, res, auth.user, ctx.params[0]);
-    }
+    handler: (req, res, ctx) => handleUpdateProfit(req, res, ctx.params[0])
   },
   {
     method: 'DELETE',
     pattern: /^\/api\/profits\/([^/]+)$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleDeleteProfit(req, res, auth.user, ctx.params[0]);
-    }
+    handler: (req, res, ctx) => handleDeleteProfit(req, res, ctx.params[0])
   },
-  {
-    method: 'GET',
-    pattern: /^\/api\/inbox$/,
-    handler: async (req, res) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleGetInbox(req, res, auth.user);
-    }
-  },
-  {
-    method: 'POST',
-    pattern: /^\/api\/inbox$/,
-    handler: async (req, res) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleCreateInbox(req, res, auth.user);
-    }
-  },
+  { method: 'GET', pattern: /^\/api\/inbox$/, handler: (req, res) => handleGetInbox(req, res) },
+  { method: 'POST', pattern: /^\/api\/inbox$/, handler: (req, res) => handleCreateInbox(req, res) },
   {
     method: 'DELETE',
     pattern: /^\/api\/inbox\/([^/]+)$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleDeleteInbox(req, res, auth.user, ctx.params[0]);
-    }
+    handler: (req, res, ctx) => handleDeleteInbox(req, res, ctx.params[0])
   },
-  {
-    method: 'GET',
-    pattern: /^\/api\/reviews$/,
-    handler: async (req, res, ctx) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleGetReviews(req, res, auth.user, ctx.url);
-    }
-  },
-  {
-    method: 'POST',
-    pattern: /^\/api\/reviews$/,
-    handler: async (req, res) => {
-      const auth = ensureAuthenticated(req, res);
-      if (!auth) return;
-      await handleUpsertReview(req, res, auth.user);
-    }
-  }
+  { method: 'GET', pattern: /^\/api\/reviews$/, handler: (req, res, ctx) => handleGetReviews(req, res, ctx.url) },
+  { method: 'POST', pattern: /^\/api\/reviews$/, handler: (req, res) => handleUpsertReview(req, res) }
 ];
 
 function findRoute(method, pathname) {
@@ -972,7 +703,7 @@ const server = http.createServer(async (req, res) => {
     sendText(res, 204, '', {
       'Access-Control-Allow-Origin': req.headers.origin || '',
       'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Allow-Headers': 'Content-Type, X-Setup-Token',
+      'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS'
     });
     return;

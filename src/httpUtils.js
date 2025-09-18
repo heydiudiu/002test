@@ -1,5 +1,3 @@
-const config = require('./config');
-
 function applySecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -31,46 +29,6 @@ function sendText(res, statusCode, text, extraHeaders = {}) {
   };
   res.writeHead(statusCode, headers);
   res.end(body);
-}
-
-function parseCookies(req) {
-  const cookieHeader = req.headers['cookie'];
-  const cookies = {};
-  if (!cookieHeader) {
-    return cookies;
-  }
-  const pairs = cookieHeader.split(';');
-  for (const pair of pairs) {
-    const [name, ...rest] = pair.trim().split('=');
-    if (!name) {
-      continue;
-    }
-    cookies[name] = decodeURIComponent(rest.join('=') || '');
-  }
-  return cookies;
-}
-
-function serializeCookie(name, value, options = {}) {
-  const parts = [`${name}=${encodeURIComponent(value)}`];
-  if (options.maxAge) {
-    parts.push(`Max-Age=${Math.floor(options.maxAge)}`);
-  }
-  if (options.expires) {
-    parts.push(`Expires=${options.expires.toUTCString()}`);
-  }
-  parts.push(`Path=${options.path || '/'}`);
-  if (options.httpOnly !== false) {
-    parts.push('HttpOnly');
-  }
-  if (options.sameSite) {
-    parts.push(`SameSite=${options.sameSite}`);
-  } else {
-    parts.push('SameSite=Strict');
-  }
-  if (options.secure || config.secureCookies) {
-    parts.push('Secure');
-  }
-  return parts.join('; ');
 }
 
 function parseJsonBody(req) {
@@ -105,8 +63,6 @@ function parseJsonBody(req) {
 module.exports = {
   sendJson,
   sendText,
-  parseCookies,
-  serializeCookie,
   parseJsonBody,
   applySecurityHeaders
 };

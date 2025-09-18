@@ -23,29 +23,16 @@ npm start
 # 默认监听 http://localhost:3000
 ```
 
-首次启动后：
-
-1. 调用 `POST /auth/setup` 初始化账户（仅允许执行一次）。
-   ```bash
-   curl -X POST http://localhost:3000/auth/setup \
-     -H 'Content-Type: application/json' \
-     -d '{"username":"your-name","password":"StrongPassword!234"}'
-   ```
-2. 访问网页，使用刚设置的账号登录。
-
-> 初始化密码至少需要 8 个字符，并同时包含字母、数字和符号。
-
-> 如果设置了 `SETUP_TOKEN`，在调用 `/auth/setup` 时需额外附带 `X-Setup-Token` 头部。
+启动后访问 `http://localhost:3000` 即可开始记录。所有数据默认保存在本地 `data/store.json` 中，建议在 `.env`
+中配置强随机的 `APP_SECRET` 以启用 AES-256-GCM 加密。
 
 ## 环境变量说明
 
 | 变量 | 作用 | 默认 |
 | --- | --- | --- |
 | `PORT` | 服务监听端口 | `3000` |
-| `APP_SECRET` | 加密本地数据文件的主密码，必须自行修改 | *无* |
-| `SESSION_LIFETIME_MS` | 登录会话有效期（毫秒） | 7 天 |
-| `SETUP_TOKEN` | （可选）初始化接口的额外令牌 | *未设置* |
-| `COOKIE_SECURE` | 为 Cookie 增加 `Secure` 属性（HTTPS 环境建议开启） | `false` |
+| `APP_SECRET` | 加密本地数据文件的主密码，建议务必设置 | *无* |
+| `DATA_FILE` | 自定义数据文件名称（可选） | `store.json` |
 
 ## 功能概览
 
@@ -78,18 +65,13 @@ npm start
 - 本地数据保存于 `data/store.json`
 - 设置 `APP_SECRET` 时，数据将使用 AES-256-GCM 加密
 - 无第三方追踪或外部请求，可直接部署在离线/内网环境
-- Session 基于 HTTP Only Cookie，支持手动设置有效期与 `Secure` 属性
 
 ## API 摘要
 
-所有 `/api/*` 接口均需登录后使用：
+所有接口均可直接在本地调用：
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/auth/setup` | 首次初始化账户 |
-| `POST` | `/auth/login` | 登录 |
-| `POST` | `/auth/logout` | 退出登录 |
-| `GET` | `/auth/session` | 检查登录状态 |
 | `GET` | `/api/dashboard` | 获取仪表盘数据 |
 | `GET/POST/PATCH/DELETE` | `/api/tasks` | 任务 CRUD |
 | `GET/POST/PATCH/DELETE` | `/api/ideas` | 灵感 CRUD |
@@ -114,7 +96,6 @@ npm test    # 输出占位信息
 │   ├── styles.css
 │   └── app.js
 ├── src/
-│   ├── auth.js          # 密码哈希与强度校验
 │   ├── config.js        # 环境变量解析
 │   ├── env.js           # 简易 .env 解析器
 │   ├── httpUtils.js     # HTTP 工具函数
@@ -128,7 +109,7 @@ npm test    # 输出占位信息
 ## 常见问题
 
 - **如何备份/迁移？** 只需拷贝 `data/store.json`（如有加密需同时保存 `APP_SECRET`）。
-- **忘记密码怎么办？** 停止服务，删除 `data/store.json` 重新初始化（原数据会丢失）。
-- **能否多账户？** 目前面向个人使用，若要多人协同可扩展 `users` 结构以及权限校验。
+- **如何清空数据？** 停止服务，删除 `data/store.json` 即可重新开始（若已加密需知晓 `APP_SECRET`）。
+- **能否多账户？** 当前定位为单人本地使用，如需多人协作可自行扩展鉴权与权限逻辑。
 
 欢迎根据个人流程继续扩展，例如加入链上 API 抓取、自动风控清单或日历提醒等功能。
