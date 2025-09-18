@@ -1,0 +1,19 @@
+{
+  "name": "daily-ops-planner",
+  "version": "1.0.0",
+  "description": "Privacy-first daily planning app tailored for web3 arbitrage workflows.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "echo \"No automated tests configured\""
+  },
+  "keywords": [
+    "planner",
+    "web3",
+    "productivity"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs"
+}

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Web3 套利者日程控制台</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <header class="app-header">
+        <div>
+          <h1>Web3 套利者日常规划</h1>
+          <p>聚焦当日行动、策略灵感和收益复盘，保护隐私的个人指挥中心。</p>
+        </div>
+        <div class="session-info hidden" id="sessionInfo">
+          <span id="currentUser"></span>
+          <button type="button" id="logoutButton" class="ghost">退出</button>
+        </div>
+      </header>
+
+      <section id="authSection" class="card">
+        <h2>登录</h2>
+        <p class="muted">
+          首次使用请调用 <code>/auth/setup</code> 接口初始化账户。所有数据保存在本地，记得配置
+          <code>APP_SECRET</code> 以加密存储。
+        </p>
+        <form id="loginForm" class="form-grid">
+          <label>
+            用户名
+            <input type="text" name="username" autocomplete="username" required />
+          </label>
+          <label>
+            密码
+            <input type="password" name="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit" class="primary">登录</button>
+          <p class="error" id="loginError"></p>
+        </form>
+      </section>
+
+      <main id="app" class="hidden">
+        <section class="grid responsive">
+          <article class="card" id="dashboardCard">
+            <div class="card-header">
+              <h2>每日总览</h2>
+              <span id="dashboardDate"></span>
+            </div>
+            <div class="dashboard-grid">
+              <div>
+                <h3>任务</h3>
+                <ul class="stat-list">
+                  <li><span>今日待办</span><strong id="statTasksToday">0</strong></li>
+                  <li><span>明日预告</span><strong id="statTasksTomorrow">0</strong></li>
+                  <li><span>逾期任务</span><strong id="statTasksOverdue">0</strong></li>
+                </ul>
+              </div>
+              <div>
+                <h3>利润追踪</h3>
+                <ul class="stat-list">
+                  <li><span>今日收益</span><strong id="statProfitToday">0</strong></li>
+                  <li><span>近7日</span><strong id="statProfit7">0</strong></li>
+                  <li><span>近30日</span><strong id="statProfit30">0</strong></li>
+                </ul>
+              </div>
+              <div>
+                <h3>灵感与收件箱</h3>
+                <ul class="stat-list">
+                  <li><span>活跃想法</span><strong id="statIdeas">0</strong></li>
+                  <li><span>快速收集</span><strong id="statInbox">0</strong></li>
+                </ul>
+              </div>
+            </div>
+            <div class="focus-list">
+              <h3>今日核心</h3>
+              <ul id="focusList"></ul>
+            </div>
+          </article>
+
+          <article class="card" id="taskCard">
+            <div class="card-header">
+              <h2>任务规划</h2>
+            </div>
+            <form id="taskForm" class="form-grid">
+              <label>标题<input type="text" name="title" required /></label>
+              <label>截止日期<input type="date" name="dueDate" /></label>
+              <label>
+                优先级
+                <select name="priority">
+                  <option value="high">高</option>
+                  <option value="medium" selected>中</option>
+                  <option value="low">低</option>
+                </select>
+              </label>
+              <label>分类<input type="text" name="category" placeholder="研究 / 复盘 / 生活" /></label>
+              <label>标签<input type="text" name="tags" placeholder="用逗号分隔" /></label>
+              <label>预估分钟<input type="number" name="estimatedMinutes" min="0" /></label>
+              <label class="full">
+                备注
+                <textarea name="description" rows="2" placeholder="准备资源、风控点、协作需求"></textarea>
+              </label>
+              <button type="submit" class="primary full">添加任务</button>
+              <p class="error" id="taskError"></p>
+            </form>
+            <div class="task-lists">
+              <section>
+                <h3>今日</h3>
+                <ul id="taskToday"></ul>
+              </section>
+              <section>
+                <h3>明日</h3>
+                <ul id="taskTomorrow"></ul>
+              </section>
+              <section>
+                <h3>逾期</h3>
+                <ul id="taskOverdue"></ul>
+              </section>
+              <section>
+                <h3>未来</h3>
+                <ul id="taskUpcoming"></ul>
+              </section>
+            </div>
+          </article>
+        </section>
+
+        <section class="grid responsive">
+          <article class="card" id="profitCard">
+            <div class="card-header">
+              <h2>利润记录</h2>
+            </div>
+            <form id="profitForm" class="form-grid">
+              <label>日期<input type="date" name="date" /></label>
+              <label>金额 (USD)<input type="number" name="amount" step="0.01" required /></label>
+              <label>币种<input type="text" name="currency" value="USDT" /></label>
+              <label>策略 / 市场<input type="text" name="strategy" placeholder="跨所 / 资金池 / NFT" /></label>
+              <label>链或交易所<input type="text" name="chain" /></label>
+              <label>交易哈希<input type="text" name="txHash" /></label>
+              <label class="full">
+                备注
+                <textarea name="notes" rows="2" placeholder="复盘要点、风险提示"></textarea>
+              </label>
+              <button type="submit" class="primary full">记录收益</button>
+              <p class="error" id="profitError"></p>
+            </form>
+            <table class="data-table" id="profitTable">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>金额</th>
+                  <th>策略</th>
+                  <th>渠道</th>
+                  <th>备注</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </article>
+
+          <article class="card" id="ideaCard">
+            <div class="card-header">
+              <h2>策略灵感</h2>
+            </div>
+            <form id="ideaForm" class="form-grid">
+              <label>标题<input type="text" name="title" required /></label>
+              <label>标签<input type="text" name="tags" placeholder="市场,链,合作方" /></label>
+              <label>影响力 (1-10)<input type="number" name="impact" min="1" max="10" /></label>
+              <label>信心度 (1-10)<input type="number" name="confidence" min="1" max="10" /></label>
+              <label class="full">
+                细节
+                <textarea name="detail" rows="3" placeholder="触发条件、资源需求、预期收益"></textarea>
+              </label>
+              <button type="submit" class="primary full">保存想法</button>
+              <p class="error" id="ideaError"></p>
+            </form>
+            <ul id="ideaList" class="idea-list"></ul>
+          </article>
+        </section>
+
+        <section class="grid responsive">
+          <article class="card" id="inboxCard">
+            <div class="card-header">
+              <h2>快速收件箱</h2>
+            </div>
+            <form id="inboxForm" class="form-grid">
+              <label class="full">
+                快速记录
+                <textarea name="content" rows="2" placeholder="灵感、待办、跟进人"></textarea>
+              </label>
+              <button type="submit" class="primary full">收集</button>
+              <p class="error" id="inboxError"></p>
+            </form>
+            <ul id="inboxList" class="inbox-list"></ul>
+          </article>
+
+          <article class="card" id="reviewCard">
+            <div class="card-header">
+              <h2>每日复盘</h2>
+            </div>
+            <form id="reviewForm" class="form-grid">
+              <label>日期<input type="date" name="date" /></label>
+              <label class="full">今日亮点<textarea name="highlight" rows="2"></textarea></label>
+              <label class="full">经验教训<textarea name="lessons" rows="2"></textarea></label>
+              <label class="full">风险 / 阻碍<textarea name="blockers" rows="2"></textarea></label>
+              <label>状态<input type="text" name="mood" placeholder="专注 / 紧张 / 顺畅" /></label>
+              <button type="submit" class="primary full">保存复盘</button>
+              <p class="error" id="reviewError"></p>
+            </form>
+            <ul id="reviewList" class="review-list"></ul>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <template id="taskItemTemplate">
+      <li class="task-item">
+        <div class="task-main">
+          <h4></h4>
+          <p class="meta"></p>
+          <p class="note"></p>
+        </div>
+        <div class="task-actions"></div>
+      </li>
+    </template>
+
+    <template id="ideaItemTemplate">
+      <li class="idea-item">
+        <div class="idea-main">
+          <h4></h4>
+          <p class="tags"></p>
+          <p class="detail"></p>
+        </div>
+        <div class="idea-actions"></div>
+      </li>
+    </template>
+
+    <template id="inboxItemTemplate">
+      <li class="inbox-item">
+        <div>
+          <p class="content"></p>
+          <span class="timestamp"></span>
+        </div>
+        <div class="inbox-actions"></div>
+      </li>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
